@@ -1,0 +1,14 @@
+/target/
+**/*.rs.bk
+*.pdb
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# AgentForge's own state directories (created at runtime by `agentforge init`,
+# never checked in — every test/example uses tempfile-backed state roots instead)
+.agentforge/

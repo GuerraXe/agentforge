@@ -1,0 +1,47 @@
+[package]
+name = "agentforge"
+version = "0.1.0"
+edition = "2021"
+description = "A CLI for safely running, testing, comparing, and evaluating autonomous coding agents"
+license = "MIT"
+repository = "https://github.com/GuerraXe/agentforge"
+readme = "README.md"
+keywords = ["cli", "agent", "coding-agent", "evaluation", "testing"]
+categories = ["command-line-utilities", "development-tools"]
+publish = false
+
+[[bin]]
+name = "agentforge"
+path = "src/main.rs"
+
+[lib]
+name = "agentforge"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+glob = "0.3"
+
+# Real process-tree containment for the Executor's timeout kill (SPEC.md §8) — a plain
+# `Child::kill()` only terminates the one directly-spawned process; a detached grandchild
+# survives indefinitely. Unix: put the child in its own process group and kill the group.
+# Windows: assign the child to a Job Object and terminate the job.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"
