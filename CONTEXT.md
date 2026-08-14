@@ -9,7 +9,7 @@ A portfolio-quality Rust CLI for safely running, testing, comparing, and evaluat
 coding agents (e.g. Claude Code, other agentic coding tools). Scope not yet narrowed beyond that
 — see "Unresolved architectural decisions" below.
 
-## Current repository state (as of 2026-08-13)
+## Current repository state (as of 2026-08-14)
 
 - **The whole product is implemented and wired end to end: the shared foundation, isolated
   task-worktree CLI management (`workspace`), the evaluator, the task-embedded reproducible
@@ -108,6 +108,26 @@ coding agents (e.g. Claude Code, other agentic coding tools). Scope not yet narr
   jobs). AgentForge's polish bar (README quality, CI, changelog discipline) should match this, with
   Rust-native equivalents (`Cargo.toml`, `cargo clippy`, `cargo test`, etc. in place of the Python
   tooling).
+
+**Final SOLO verification pass (2026-08-14).** Every SPEC.md §17 acceptance criterion was checked
+against the real test suite/implementation rather than documentation or intent — full evidence-cited
+record in `docs/VERIFICATION.md`. Closed 9 gaps where a criterion had no regression test actually
+proving it (284 → 293 tests); corrected one SPEC.md wording mismatch (`policy show`'s tag
+vocabulary) to match the already-deliberate implementation rather than the other way around. Two
+items moved honestly to the roadmap rather than silently claimed done: the opt-in real-Claude-Code
+test lane, and `race`'s exit-1-when-zero-completed branch (no CLI lever exists to force it).
+
+**Final portfolio-review pass (2026-08-14).** Read the repository as a senior Rust engineer
+evaluating a candidate's GitHub project — see `docs/TEST_STATUS.md`'s matching entry for the full
+list. Fixed a real flaky-under-load test-timing assertion in `tests/cli_run.rs`, a stale
+"no CI yet" claim in `CONTRIBUTING.md`, and stale `284/284` test-count references in `README.md`/
+`docs/ARCHITECTURE.md`'s current-status lines (now 293/293) — this entry and `docs/TEST_STATUS.md`'s
+also close the gap where the SOLO verification pass above never got a `CONTEXT.md`/
+`TEST_STATUS.md` update of its own. One finding flagged rather than silently acted on: `CONTEXT.md`
+and `docs/TEST_STATUS.md`'s own pass-by-pass narration (this section included) reads as an AI
+agent's session log, not curated portfolio prose — a real observation for whoever reviews this repo
+next, left for a human decision since both files are this project's own declared
+session-continuity/state-tracking infrastructure, not incidental clutter.
 
 **Adversarial security/correctness review (2026-08-13).** A hostile-reviewer pass across the
 whole `src/` tree — full write-up in `docs/ADVERSARIAL_REVIEW.md`. Found and fixed 5

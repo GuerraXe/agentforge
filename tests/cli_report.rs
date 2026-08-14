@@ -362,6 +362,96 @@ fn e2e_score_recomputes_from_persisted_raw_metrics() {
     assert!(stdout.contains("10/10"), "{stdout}");
 }
 
+/// SPEC.md §17/§18 (row 17): "`score --weights alt.toml` run twice produces byte-identical
+/// `ScoreCard` JSON both times." `report_score` (cli/mod.rs) recomputes purely from `Store`-read
+/// data plus the given weights file — no `Executor`/process spawn anywhere on that path (verified
+/// by reading `report_score`'s body: it only calls `Store::load_*` and the pure function
+/// `scoring::score`), so the "spawns zero processes" half of this criterion is a structural
+/// property of the code, not something a runtime spy can add further confidence to through the
+/// compiled binary's black-box CLI surface — this test covers the concretely-observable half,
+/// byte-identical determinism.
+#[test]
+fn e2e_score_with_weights_override_is_byte_identical_across_repeated_runs() {
+    let repo = common::init_temp_repo();
+    let repo_str = repo.path().to_string_lossy().to_string();
+
+    let eval_path = write_evaluator_toml(repo.path(), "eval-1");
+    agentforge_cmd()
+        .args([
+            "evaluator",
+            "add",
+            "--repo",
+            &repo_str,
+            &eval_path.to_string_lossy(),
+        ])
+        .output()
+        .expect("evaluator add");
+    let base_ref = common::head_sha(repo.path());
+    let task_path = write_task_toml(repo.path(), "task-1", "eval-1", &base_ref);
+    agentforge_cmd()
+        .args([
+            "task",
+            "add",
+            "--repo",
+            &repo_str,
+            &task_path.to_string_lossy(),
+        ])
+        .output()
+        .expect("task add");
+
+    seed_experiment(repo.path(), "task-1", "eval-1", "exp-1");
+
+    let alt_weights_toml = r#"
+correctness = 60.0
+efficiency = 25.0
+parsimony = 15.0
+formula_version = "v1"
+source = "unused-overwritten-by-cli"
+
+[rating_bands]
+excellent = 85
+good = 65
+fair = 40
+poor = 15
+"#;
+    let weights_path = repo.path().join("alt.toml");
+    std::fs::write(&weights_path, alt_weights_toml).expect("write alt weights toml");
+
+    let run_once = || {
+        let out = agentforge_cmd()
+            .args([
+                "report",
+                "score",
+                "--repo",
+                &repo_str,
+                "--weights",
+                &weights_path.to_string_lossy(),
+                "--json",
+                "exp-1",
+            ])
+            .output()
+            .expect("run agentforge score --weights --json");
+        assert!(
+            out.status.success(),
+            "score --weights failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let first = run_once();
+    let second = run_once();
+    assert_eq!(
+        first, second,
+        "score --weights alt.toml must produce byte-identical JSON across repeated runs"
+    );
+    // Not a vacuous check: confirm the override actually changed the weights the CLI reports,
+    // rather than both runs coincidentally matching the built-in defaults.
+    let value: serde_json::Value = serde_json::from_str(&first).expect("valid JSON");
+    assert_eq!(value["thresholds"]["rating_bands"]["excellent"], 85);
+}
+
 #[test]
 fn e2e_show_reports_exit_2_for_an_unknown_id() {
     let repo = common::init_temp_repo();

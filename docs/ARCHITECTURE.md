@@ -1,7 +1,7 @@
 # AgentForge — Rust Architecture
 
 **Status: implemented and tested end to end.** Every module and command described below is real,
-not a sketch — 284/284 tests passing, `cargo clippy --all-targets --all-features -- -D warnings`
+not a sketch — 293/293 tests passing, `cargo clippy --all-targets --all-features -- -D warnings`
 and `cargo fmt --check` both clean, plus a from-scratch adversarial security review
 (`docs/ADVERSARIAL_REVIEW.md`) with its findings fixed. This document is also the project's design
 history: it was written and kept current pass by pass as the implementation landed, so most

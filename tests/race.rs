@@ -193,6 +193,60 @@ fn ranking_is_correct_against_real_evaluator_distinguishable_patches() {
     );
 }
 
+/// SPEC.md §17/§18 (row 19, R2/T1 resolution): "on a `FakeAdapter` fixture scripted so two
+/// participants produce identical `score.total`, the leaderboard orders them by ascending
+/// `race_index` in 20/20 repeated invocations" — a repetition-based flake check for concurrent
+/// completion order, not a timing-based one. `report::rank_participants`'s comparator
+/// (`b_total.cmp(&a_total).then(a.race_index.cmp(&b.race_index))`) makes this deterministic by
+/// construction once every participant's `ExperimentRecord` is persisted, but participants finish
+/// in a genuinely nondeterministic order under `max_parallel` fan-out — this proves race_index
+/// (stamped before any participant runs, SPEC.md §12) survives that, not just the sort itself.
+#[test]
+fn leaderboard_tie_break_by_race_index_is_stable_across_20_repeated_runs() {
+    let repo = common::init_temp_repo();
+    common::commit_file(repo.path(), "app.txt", "BROKEN\n", "seed");
+    let head = common::head_sha(repo.path());
+    let (race_runner, store) = common::race_runner_with_store(repo.path());
+    store
+        .save_evaluator(&detecting_evaluator("detect", "FIXED"), false)
+        .expect("save_evaluator");
+    let task = common::task_spec("task-tie", &head, "detect", common::good_verdict());
+    let reporter = Reporter::new(&store);
+
+    for i in 0..20 {
+        let agents = vec![
+            (
+                common::fake_agent_config("agent-a"),
+                common::file_writing_fake_adapter("app.txt", "FIXED"),
+            ),
+            (
+                common::fake_agent_config("agent-b"),
+                common::file_writing_fake_adapter("app.txt", "FIXED"),
+            ),
+        ];
+        let race = race_runner
+            .run_race(&task, &agents, 1, 2)
+            .expect("run_race");
+        let leaderboard = reporter.race_json(&race.id).expect("race_json");
+        let entries = leaderboard["leaderboard"]
+            .as_array()
+            .expect("leaderboard array");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0]["score"]["total"], entries[1]["score"]["total"],
+            "both participants must produce an identical (tied) score.total for this to be a \
+             real tie-break test — iteration {i}: {leaderboard:#}"
+        );
+        let first_index = entries[0]["race_index"].as_u64().unwrap();
+        let second_index = entries[1]["race_index"].as_u64().unwrap();
+        assert!(
+            first_index < second_index,
+            "iteration {i}: a tied score must order by ascending race_index ({first_index} vs \
+             {second_index}): {leaderboard:#}"
+        );
+    }
+}
+
 #[test]
 fn one_participants_internal_failure_does_not_abort_the_others() {
     let repo = common::init_temp_repo();

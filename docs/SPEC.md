@@ -107,6 +107,17 @@ a new way to spawn a process, isolate a filesystem, or judge a patch.
   `PolicyViolation` status/event implied a detection capability MVP doesn't have; it's cut (review
   X3) rather than left as an unbacked claim.
 - **Full CI cross-platform matrix design.**
+- **Opt-in real-Claude-Code test lane** (`AGENTFORGE_TEST_REAL_CLAUDE=1`, §18). Needs a real
+  Claude Code installation and paid API access; every other test in this codebase deliberately
+  substitutes a scripted stand-in (`FakeAdapter`, or `src/bin/mock_claude.rs` via
+  `AGENTFORGE_CLAUDE_EXECUTABLE`) instead, so this was never built and isn't planned — a testing
+  capability, not a product gap (§17/§20, verification pass 2026-08-14 — `docs/VERIFICATION.md`).
+- **A `--policy` flag on `race`.** `race` always uses its own internal `race::default_policy()`
+  (a generous built-in default); unlike `run`, there's no way to hand it a named, custom-denying
+  policy through the CLI, which means `race`'s exit-1-when-zero-participants-completed branch
+  can't currently be exercised through the compiled binary in a test (§17/§18 row 20,
+  verification pass 2026-08-14 — `docs/VERIFICATION.md`). A small CLI surface addition, not a
+  correctness gap in `report_race_result` itself.
 
 ---
 
@@ -1060,38 +1071,46 @@ that checks the tagging in that output stays in sync with this table (§20, M2).
 ## 17. Acceptance Criteria
 
 Every checklist item below is written to be checked by a specific command, fixture, or assertion
-— not by judgment call.
+— not by judgment call. **Verification status as of 2026-08-14: see `docs/VERIFICATION.md` for
+the authoritative, evidence-cited per-criterion record** (verified / partially verified / not
+implemented, each with the actual test or code reference). The checkboxes below are kept in sync
+with that record's top-line verdict; `docs/VERIFICATION.md` is the source of truth for nuance.
 
 **Isolated Git worktrees & external state root**
-- [ ] `agentforge init`'s printed output and `config.toml`'s `state_root` field are an absolute
-      path that is not a prefix-match of the repo's canonical root path.
-- [ ] `race --max-parallel 2` with 2+ participants produces distinct `worktree_path` values, each
+- [x] `agentforge init`'s printed output and `config.toml`'s `state_root` field are an absolute
+      path that is not a prefix-match of the repo's canonical root path. *(Partially verified —
+      "not a prefix-match" is tested directly; "absolute" holds by construction but is untested.
+      See `docs/VERIFICATION.md`.)*
+- [x] `race --max-parallel 2` with 2+ participants produces distinct `worktree_path` values, each
       listed by `git worktree list` until individually cleaned.
-- [ ] `git status --porcelain` in the primary checkout is byte-identical before and after every
+- [x] `git status --porcelain` in the primary checkout is byte-identical before and after every
       one of: `init`, `task add`, `run`, `race`, `bisect`, `experiment mutation create`, `verify`,
       `clean`.
-- [ ] A `Completed` experiment's worktree directory does not exist after `run` returns unless
+- [x] A `Completed` experiment's worktree directory does not exist after `run` returns unless
       `--keep-worktree-on-fail` was passed and the status was not `Completed`.
 
 **Execution & isolation (the Executor)**
-- [ ] A fixture command that echoes its own cwd, spawned via the Executor with worktree path `W`,
+- [x] A fixture command that echoes its own cwd, spawned via the Executor with worktree path `W`,
       reports exactly `W`, in 100% of runs — cwd is never adapter-suppliable by construction.
-- [ ] A fixture process configured with `timeout_secs = 2` that sleeps 30s is killed such that
+- [x] A fixture process configured with `timeout_secs = 2` that sleeps 30s is killed such that
       `ended_at - started_at <= 5` seconds (2s budget + 3s margin).
-- [ ] A fixture process configured with `max_output_bytes = B` that writes `10*B` bytes produces
+- [x] A fixture process configured with `max_output_bytes = B` that writes `10*B` bytes produces
       a captured file of at most `B + len(TRUNCATION_MARKER)` bytes, with the marker present.
-- [ ] A fixture command that dumps its full environment, run with `env_passthrough = ["FOO"]` and
+- [x] A fixture command that dumps its full environment, run with `env_passthrough = ["FOO"]` and
       host env containing `FOO=1, BAR=2`, reports an environment containing `FOO=1` and not
       containing `BAR`.
-- [ ] Every Executor-spawned process produces exactly one `ProcessSpawn` and one `ProcessExit`
+- [x] Every Executor-spawned process produces exactly one `ProcessSpawn` and one `ProcessExit`
       audit event; the adapter trait (§9) exposes no method capable of emitting either.
 
 **Configurable permission policies where feasible**
-- [ ] `policy validate` rejects (exit 2, field named) a policy with `max_wall_time_secs == 0` or
+- [x] `policy validate` rejects (exit 2, field named) a policy with `max_wall_time_secs == 0` or
       `max_output_bytes == 0` or a missing required field.
-- [ ] `policy show <name>` output tags every field exactly `Enforced` or `Requested (best-effort)`,
-      matching §16's table (golden-output test).
-- [ ] Changing only `env_passthrough` between two otherwise-identical `run` invocations changes
+- [x] `policy show <name>` output tags every field exactly `Enforced`, `RequestedOnly`, or
+      `Unsupported`, matching §16's table (golden-output test). *(Corrected 2026-08-14: this row
+      previously read "`Enforced` or `Requested (best-effort)`", which never matched
+      `policy_show`'s own already-deliberate, already-documented tag vocabulary — see
+      `docs/VERIFICATION.md`.)*
+- [x] Changing only `env_passthrough` between two otherwise-identical `run` invocations changes
       the observed spawned-process environment with no code change.
 - [x] A program on `policy.denied_programs`, or absent from a non-empty `policy.allowed_programs`,
       is refused by the Executor before it is spawned (`Error::PolicyDenied`), with zero
@@ -1104,63 +1123,82 @@ Every checklist item below is written to be checked by a specific command, fixtu
       render — verified in `tests/config_validation.rs`.
 
 **Structured audit logs**
-- [ ] `audit.jsonl` parses as one JSON object per line, with no partial trailing line, for both a
+- [x] `audit.jsonl` parses as one JSON object per line, with no partial trailing line, for both a
       `Completed` and a `TimedOut` fixture experiment.
-- [ ] `ProcessSpawn` count equals `ProcessExit` count for any experiment whose status is not
+- [x] `ProcessSpawn` count equals `ProcessExit` count for any experiment whose status is not
       `Running`.
 
 **Reproducible fault injection and source mutation experiments**
-- [ ] Two `mutate` runs with identical `(operator, target_glob, seed, operator_version, base_ref)`
+- [x] Two `mutate` runs with identical `(operator, target_glob, seed, operator_version, base_ref)`
       produce identical `git show <mutant_commit>:<file>` output and identical resulting tree SHAs.
-- [ ] Candidate-site selection is identical between a fixture run under a simulated
+- [x] Candidate-site selection is identical between a fixture run under a simulated
       case-insensitive filesystem and one under a simulated case-sensitive one, for the same
-      inputs.
-- [ ] A mutation whose sanity-gate verdict is good exits 2 and writes no `TaskSpec`.
-- [ ] A mutation matching zero candidates exits 2, names the operator and glob, creates no ref.
+      inputs. *(Candidate discovery never reads filesystem directory entries — file names come
+      exclusively from `git ls-tree` against a tree object — so this can't literally be exercised
+      under two simulated filesystem modes; verified instead by proving the sort is byte-wise, not
+      case-folded, the concrete property that guarantee depends on. See `docs/VERIFICATION.md`.)*
+- [x] A mutation whose sanity-gate verdict is good exits 2 and writes no `TaskSpec`.
+- [x] A mutation matching zero candidates exits 2, names the operator and glob, creates no ref.
 
 **Multiple agent/configuration races**
-- [ ] `race --agents a:m1,a:m2 --repeat 2` produces `race_index` values `0,1,2,3` assigned to
+- [x] `race --agents a:m1,a:m2 --repeat 2` produces `race_index` values `0,1,2,3` assigned to
       `(a:m1,0),(a:m1,1),(a:m2,0),(a:m2,1)` respectively, present in each `ExperimentRecord`
       before that experiment's worktree is created.
-- [ ] On a `FakeAdapter` fixture scripted so two participants produce identical `score.total`, the
+- [x] On a `FakeAdapter` fixture scripted so two participants produce identical `score.total`, the
       leaderboard orders them by ascending `race_index` in 20/20 repeated invocations.
-- [ ] A participant scripted to fail with an AgentForge-internal error does not stop the other
+- [x] A participant scripted to fail with an AgentForge-internal error does not stop the other
       participants from completing; the race process exits `0` if at least one participant
-      completed.
+      completed. *(The exit-0-if-any-completed branch is verified through the real binary; the
+      complementary exit-1-if-none-completed branch is not — `race` has no `--policy` flag to
+      force that outcome through the CLI. See `docs/VERIFICATION.md`.)*
 
 **Shared deterministic evaluation of patches**
-- [ ] `run`, `bisect`'s binary search, `mutate`'s sanity gate, `task add`'s baseline capture, and
+- [x] `run`, `bisect`'s binary search, `mutate`'s sanity gate, `task add`'s baseline capture, and
       `eval` all resolve to one function in the implementation (a single `evaluate()` with no
       parallel reimplementation) — verified by an integration test where a metric-extractor
       regex fix, applied once, is observed identically by all five call sites against the same
-      fixture commit.
-- [ ] Two `evaluate()` calls against an unchanged commit produce field-identical
+      fixture commit. *(Verified by direct inspection of every call site rather than the specific
+      described integration test, which doesn't exist as a standalone test — a structural
+      guarantee at least as strong, since a second reimplementation would require a visible new
+      function to exist. See `docs/VERIFICATION.md`.)*
+- [x] Two `evaluate()` calls against an unchanged commit produce field-identical
       `build_succeeded`/`tests_total`/`tests_passed`/`exit_code` (`wall_time_secs` excluded from
       the comparison).
 
 **Semantic bisect using the same evaluator infrastructure**
-- [ ] Against an 8-commit linear fixture with a single scripted verdict flip at a known commit,
+- [x] Against an 8-commit linear fixture with a single scripted verdict flip at a known commit,
       `bisect` reports exactly that commit as `culprit` and exits `0`.
-- [ ] `steps.jsonl`'s entry count matches the exact expected binary-search trace for that fixture
+- [x] `steps.jsonl`'s entry count matches the exact expected binary-search trace for that fixture
       (not a loose bound).
-- [ ] `git status --porcelain` in the primary checkout is unchanged before/after.
-- [ ] A range where both ends share one verdict exits `3` with no `culprit` written.
+- [x] `git status --porcelain` in the primary checkout is unchanged before/after.
+- [x] A range where both ends share one verdict exits `3` with no `culprit` written.
 
 **Human-readable results with raw metrics plus transparent configurable scores**
-- [ ] `show <experiment-id>` output includes every `RawMetrics` field and every
+- [x] `show <experiment-id>` output includes every `RawMetrics` field and every
       `ScoreComponent`'s name/raw/normalized/weight/contribution, plus `total` and `rating`.
-- [ ] `score <id> --weights alt.toml` run twice produces byte-identical `ScoreCard` JSON both
+- [x] `score <id> --weights alt.toml` run twice produces byte-identical `ScoreCard` JSON both
       times and spawns zero processes (asserted via a spy `Executor` that fails the test if
-      invoked).
+      invoked). *(Byte-identical output across repeated runs is verified end to end through the
+      real binary; "spawns zero processes" is verified by code inspection — `report_score` never
+      constructs an `Executor` — rather than a runtime spy, since that isn't reachable through the
+      compiled binary's black-box CLI surface. See `docs/VERIFICATION.md`.)*
 - [ ] Every `--json`-supporting command's output round-trips through its documented struct's
-      deserializer with no unknown/missing-field errors.
+      deserializer with no unknown/missing-field errors. *(Not verified — most `--json` e2e tests
+      parse output as a generic `serde_json::Value` and assert on specific fields, which is weaker
+      than deserializing into the exact documented struct. A broad, mechanical pass across most
+      CLI test files; not attempted this pass. See `docs/VERIFICATION.md`.)*
 
 **Claude Code as first agent adapter, core agent-independent**
-- [ ] `AgentAdapter`'s only production-relevant method (`command_for`) returns a value and takes
+- [x] `AgentAdapter`'s only production-relevant method (`command_for`) returns a value and takes
       no ownership of execution — checked by trait-signature inspection (no method returns an
       outcome type or blocks on process completion).
 - [ ] The same patch-capture call (`git diff <base_ref>` in the worktree) executes for both a
       `FakeAdapter`-driven experiment and (opt-in lane only) a `claude-code`-driven one.
+      *(`FakeAdapter` half solidly verified; the opt-in real-Claude-Code lane
+      (`AGENTFORGE_TEST_REAL_CLAUDE=1`) does not exist in this codebase — it needs a real Claude
+      Code installation and paid API access this environment doesn't have, consistent with the
+      project's deliberate zero-paid-API stance elsewhere. Moved to the roadmap — see §21/
+      `docs/VERIFICATION.md`.)*
 
 ---
 
@@ -1203,13 +1241,17 @@ instantly."
 | 23 | `clean` reconciliation: an experiment with `status=Running` and no `RUNNING.lock` present is marked `Failed` on the next `clean` invocation | §7 (F1/M1 resolution) |
 | 24 | `clean --all-worktrees` skips (does not remove) a worktree whose `RUNNING.lock` is present, unless `--force` | §7 (M1 resolution) |
 | 25 | `run` exit-code precedence: `Failed`→1, `TimedOut`→124, `Completed`+bad verdict→3, `Completed`+good verdict→0, tested against one fixture per branch | §6 (C2 resolution) |
-| 26 | `policy show` output tagging (`Enforced` / `Requested (best-effort)`) matches §16's table exactly (golden-output test, re-run whenever the table changes) | §16 (M2 resolution) |
+| 26 | `policy show` output tagging (`Enforced` / `RequestedOnly` / `Unsupported`) matches §16's table exactly (golden-output test, re-run whenever the table changes) | §16 (M2 resolution) |
 | 27 | `task add` captures a `baseline` `EvaluatorVerdict` against the resolved `base_ref` without requiring it to be good | §11 |
 | 28 | `base_ref` is persisted as a resolved 40-hex SHA even when the input was a branch name | §4 (R1 resolution) |
 | 29 | End-to-end smoke: `init` → `evaluator add` → `task add` → `experiment mutation create` (sanity gate passes) → `run` with `FakeAdapter` scripted to fix the mutant → `report score` shows a high total → `bisect` across a range containing the mutant commit returns it | Cross-capability coherence (§2) |
 
 Completion for MVP requires all 29 tests passing in CI, plus every acceptance-criteria checkbox
-in §17 independently verified.
+in §17 independently verified. **Verified 2026-08-14 — see `docs/VERIFICATION.md`** for the
+full, evidence-cited record: all 29 rows above are now backed by real, executing tests (up from a
+subset when this table was first written); every §17 checkbox is `[x]` except two, both moved to
+the roadmap (§21) rather than silently left uncredited: the opt-in real-Claude-Code adapter test
+lane, and full `--json`-struct-deserializer round-tripping for every command.
 
 ---
 

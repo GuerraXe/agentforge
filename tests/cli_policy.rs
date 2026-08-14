@@ -124,6 +124,56 @@ fn e2e_policy_add_list_show_validate_round_trip() {
     assert!(String::from_utf8_lossy(&validate.stdout).contains("valid"));
 }
 
+/// SPEC.md §17/§18 (row 26, M2 resolution): every `policy show` field must be tagged exactly
+/// per `PermissionPolicy::enforcement_report` (src/domain/policy.rs) — not just "the word
+/// `Enforced` appears somewhere in the output" (the weaker check above). One line per field, in
+/// `enforcement_report`'s own order, each checked against its exact tag.
+#[test]
+fn e2e_policy_show_tags_every_field_exactly_per_enforcement_report() {
+    let repo = common::init_temp_repo();
+    let repo_str = repo.path().to_string_lossy().to_string();
+    let policy_path = write_policy_toml(repo.path(), "golden-policy", 3600);
+    agentforge_cmd()
+        .args([
+            "policy",
+            "add",
+            "--repo",
+            &repo_str,
+            &policy_path.to_string_lossy(),
+        ])
+        .output()
+        .expect("run agentforge policy add");
+
+    let show = agentforge_cmd()
+        .args(["policy", "show", "--repo", &repo_str, "golden-policy"])
+        .output()
+        .expect("run agentforge policy show");
+    assert!(show.status.success());
+    let show_out = String::from_utf8_lossy(&show.stdout).into_owned();
+
+    let expected: &[(&str, &str)] = &[
+        ("env_passthrough", "Enforced"),
+        ("max_wall_time_secs", "Enforced"),
+        ("max_output_bytes", "Enforced"),
+        ("allowed_programs", "Enforced"),
+        ("denied_programs", "Enforced"),
+        ("allowed_roots", "Enforced"),
+        ("deny_network", "RequestedOnly"),
+        ("extra_readonly_paths", "RequestedOnly"),
+        ("max_memory_bytes", "Unsupported"),
+    ];
+    for (field, tag) in expected {
+        let line = show_out
+            .lines()
+            .find(|l| l.trim_start().starts_with(field))
+            .unwrap_or_else(|| panic!("no output line for field {field:?}: {show_out}"));
+        assert!(
+            line.split_whitespace().nth(1) == Some(*tag),
+            "field {field:?} must be tagged exactly {tag:?}, got line {line:?}"
+        );
+    }
+}
+
 #[test]
 fn e2e_policy_add_rejects_a_zero_wall_time_budget() {
     let repo = common::init_temp_repo();

@@ -22,11 +22,12 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-All three must pass clean — zero clippy warnings, zero test failures. There's no CI wired up yet
-(see the roadmap in [README.md](README.md)); until there is, these three commands *are* the gate,
-run locally. `cargo run --example demo` is also worth running for any change that touches CLI
-output shape, the adapter, or scoring — it exercises the whole documented command surface end to
-end with no external dependency.
+All three must pass clean — zero clippy warnings, zero test failures. [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+runs the same three (plus `cargo build`) on every push/PR, matrixed over `ubuntu-latest` and
+`windows-latest` — run them locally first rather than relying on CI to catch it. `cargo run
+--example demo` is also worth running for any change that touches CLI output shape, the adapter,
+or scoring — it exercises the whole documented command surface end to end with no external
+dependency.
 
 Write tests before implementation where practical, and prefer a test that exercises the real code
 path (a CLI integration test driving the compiled binary, a real temp git repo) over a unit test

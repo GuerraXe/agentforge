@@ -1,7 +1,9 @@
-//! CLI surface for `race` — argument parsing plus the error paths reachable without a real agent
-//! adapter. Mirrors tests/cli_run.rs's reasoning: `race` fans out into `ExperimentRunner::run`
-//! per participant, so a full success path needs the real Claude Code CLI; that path is covered
-//! at the library level by `tests/race.rs` via `FakeAdapter`. SPEC.md §6, §12.
+//! CLI surface for `race` — argument parsing, the error paths reachable without a real agent
+//! adapter, and (via `src/bin/mock_claude.rs` substituted through `AGENTFORGE_CLAUDE_EXECUTABLE`,
+//! the same mechanism `tests/cli_run.rs` and `tests/support/demo_scenario.rs` use) the real
+//! `report_race_result` exit-code branch reachable through the compiled binary. Ranking/tie-break
+//! correctness is covered at the library level by `tests/race.rs` via `FakeAdapter`. SPEC.md §6,
+//! §12.
 
 mod common;
 
@@ -197,6 +199,66 @@ fn e2e_race_reports_exit_2_for_an_unknown_adapter_in_the_agent_list() {
         Some(2),
         "an unknown adapter anywhere in --agents is a usage error, checked before any \
          participant runs: stdout={} stderr={}",
+        String::from_utf8_lossy(&race.stdout),
+        String::from_utf8_lossy(&race.stderr)
+    );
+}
+
+/// SPEC.md §17/§18 (row 20): "the race process exits 0 if at least one participant completed."
+/// `report_race_result` (cli/mod.rs) can't be unit-tested directly (private, and `ExitCode` is
+/// opaque in stable Rust — see `tests/cli_run.rs`'s equivalent note for `run`), so this proves it
+/// through the real compiled binary. `race` has no `--policy` flag (always uses its own internal
+/// `race::default_policy()`, RaceArgs has no such field), so unlike `run` there's no CLI-level way
+/// to force every participant to end something other than `Completed` — the exit-1 branch stays
+/// unverified through the compiled binary for that structural reason, noted in `docs/VERIFICATION.md`
+/// rather than silently left untested.
+#[test]
+fn e2e_race_exit_0_when_at_least_one_participant_completes() {
+    let repo = common::init_temp_repo();
+    let repo_str = repo.path().to_string_lossy().to_string();
+    let eval_path = write_noop_evaluator_toml(repo.path(), "eval-1");
+    agentforge_cmd()
+        .args([
+            "evaluator",
+            "add",
+            "--repo",
+            &repo_str,
+            &eval_path.to_string_lossy(),
+        ])
+        .output()
+        .expect("evaluator add");
+    let head = common::head_sha(repo.path());
+    let task_path = write_task_toml(repo.path(), "task-1", "eval-1", &head);
+    let add_task = agentforge_cmd()
+        .args([
+            "task",
+            "add",
+            "--repo",
+            &repo_str,
+            &task_path.to_string_lossy(),
+        ])
+        .output()
+        .expect("task add");
+    assert!(add_task.status.success());
+
+    let mock = std::path::PathBuf::from(env!("CARGO_BIN_EXE_mock_claude"));
+    let race = agentforge_cmd()
+        .args([
+            "race",
+            "--repo",
+            &repo_str,
+            "--task",
+            "task-1",
+            "--agents",
+            "claude-code:goodfix,claude-code:nofix",
+        ])
+        .env("AGENTFORGE_CLAUDE_EXECUTABLE", &mock)
+        .output()
+        .expect("run agentforge race");
+    assert_eq!(
+        race.status.code(),
+        Some(0),
+        "a race with at least one Completed participant must exit 0: stdout={} stderr={}",
         String::from_utf8_lossy(&race.stdout),
         String::from_utf8_lossy(&race.stderr)
     );

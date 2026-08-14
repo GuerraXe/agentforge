@@ -14,10 +14,22 @@
 //! deterministically edits `billing/discount.txt` in its current working directory (always the
 //! isolated experiment worktree — never adapter-suppliable, per SPEC.md §8) to one of three fixed
 //! "fix quality" outcomes, then exits 0. Never touches anything outside its cwd.
+//!
+//! `AGENTFORGE_MOCK_CLAUDE_SLEEP_SECS`, if set, sleeps that many seconds before doing anything
+//! else — the one hook that lets a test exercise the real `TimedOut` path (SPEC.md §17/§18 row
+//! 25) through the actual compiled binary and `Executor`, not a library-level substitute.
 
 use std::env;
+use std::time::Duration;
 
 fn main() {
+    if let Ok(secs) = env::var("AGENTFORGE_MOCK_CLAUDE_SLEEP_SECS") {
+        let secs: u64 = secs
+            .parse()
+            .expect("AGENTFORGE_MOCK_CLAUDE_SLEEP_SECS must be a u64");
+        std::thread::sleep(Duration::from_secs(secs));
+    }
+
     let args: Vec<String> = env::args().collect();
     let mut model = String::new();
     let mut prompt = String::new();

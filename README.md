@@ -68,7 +68,7 @@ module-by-module detail, dependency rationale, and the dated implementation reco
 
 ## What's actually implemented
 
-Every command below is real, tested, and wired end to end — **284/284 tests passing**, `cargo
+Every command below is real, tested, and wired end to end — **293/293 tests passing**, `cargo
 clippy --all-targets --all-features -- -D warnings` and `cargo fmt --check` both clean, plus a
 from-scratch adversarial security review with every finding fixed (see
 [docs/SECURITY.md](docs/SECURITY.md)):
@@ -87,6 +87,39 @@ agentforge report      {show, score, log}
 agentforge policy      {add, list, show, validate}
 agentforge clean
 ```
+
+## Install
+
+**Prerequisites:** a recent stable Rust toolchain (2021 edition — install via
+[rustup](https://rustup.rs) if you don't have one) and `git`. Nothing else — no database, no
+Docker, no separate runtime to stand up.
+
+AgentForge isn't published to crates.io (`publish = false` — see [Limitations](#limitations)); the
+only way to get it today is building from source, which takes under a minute:
+
+```
+git clone https://github.com/GuerraXe/agentforge.git
+cd agentforge
+cargo build --release          # binary lands at target/release/agentforge (.exe on Windows)
+./target/release/agentforge --help
+```
+
+Optional — put the binary on your `PATH` so plain `agentforge ...` works from anywhere, instead of
+typing `./target/release/agentforge` every time:
+
+```
+# Linux / macOS
+cp target/release/agentforge ~/.local/bin/       # or any directory already on your PATH
+
+# Windows (PowerShell)
+Copy-Item target\release\agentforge.exe $env:USERPROFILE\bin\   # any directory already on PATH
+```
+
+To run a real task against Claude Code specifically (as opposed to the zero-paid-API demo below),
+separately install the `claude` CLI and reference it as `--agent claude-code[:model]`;
+`ClaudeCodeAdapter` shells out to whatever `AGENTFORGE_CLAUDE_EXECUTABLE` points at, defaulting to
+`claude` on your `PATH`. This is entirely optional — everything else on this page, including the
+full CLI surface, works with no API key at all.
 
 ## A working example
 
@@ -110,7 +143,11 @@ Candidate                  Tests  Time  Patch  Score  Rating
 
 The score is a transparent 80/10/10 blend of correctness, efficiency, and parsimony —
 `report show <id> --verbose` breaks down every component, weight, and threshold that produced it,
-never just a bare number. Full command reference: [docs/USAGE.md](docs/USAGE.md).
+never just a bare number.
+
+**Next step:** [docs/USAGE.md](docs/USAGE.md) is the full setup-and-usage tutorial — `init` a real
+repository, register your own evaluator/task/policy, and run your first agent against it, one
+step at a time.
 
 ## Local demo — zero paid API
 
@@ -129,24 +166,16 @@ the real `ClaudeCodeAdapter`, pointed at a tiny deterministic stand-in binary
 environment override, the same knob a CI pipeline would use to swap in a stub. `adapter::resolve`
 itself is untouched.
 
-## Installation & development
+## Development
 
-Requires a recent stable Rust toolchain (2021 edition).
+The same prerequisites as [Install](#install), plus these before opening a PR (see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full checklist):
 
 ```
-git clone <this-repo>
-cd agentforge
-cargo build --release          # binary at target/release/agentforge
-
-cargo test                     # 284 tests
+cargo test                     # 293 tests
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check
-cargo run --example demo       # see it work, no setup required
 ```
-
-To run a real task against Claude Code, install the `claude` CLI and reference it as
-`--agent claude-code[:model]`; `ClaudeCodeAdapter` shells out to whatever `AGENTFORGE_CLAUDE_EXECUTABLE`
-points at, defaulting to `claude` on your `PATH`.
 
 ## Limitations
 
@@ -181,9 +210,10 @@ Not started, listed honestly as not-yet rather than implied:
 
 ## Documentation
 
+- [docs/USAGE.md](docs/USAGE.md) — full setup-and-usage tutorial and command reference, with
+  real, working examples.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — module design, dependency graph, and the dated
   record of what shipped when and why.
-- [docs/USAGE.md](docs/USAGE.md) — full command reference with real, working examples.
 - [docs/SECURITY.md](docs/SECURITY.md) — exactly what's enforced, application-level,
   platform-dependent, or not provided at all.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to build, test, and propose a change.

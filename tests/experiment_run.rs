@@ -8,7 +8,43 @@
 
 mod common;
 
-use agentforge::domain::ExperimentStatus;
+use agentforge::domain::{AuditEvent, ExperimentStatus};
+
+/// SPEC.md §17: "`audit.jsonl` parses as one JSON object per line, with no partial trailing
+/// line" plus "`ProcessSpawn` count equals `ProcessExit` count for any experiment whose status
+/// is not `Running`". Parses every line strictly (no trailing-newline leniency baked in beyond
+/// the one final `\n` a well-formed JSONL file ends with) and returns the decoded events so
+/// callers can assert on spawn/exit pairing.
+fn parse_and_validate_audit_jsonl(path: &std::path::Path) -> Vec<AuditEvent> {
+    let content = std::fs::read_to_string(path).expect("audit.jsonl must be readable");
+    assert!(
+        content.ends_with('\n') || content.is_empty(),
+        "audit.jsonl must end with a complete line, not a partial trailing one: {content:?}"
+    );
+    content
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<AuditEvent>(line).unwrap_or_else(|e| {
+                panic!("audit.jsonl line failed to parse as one JSON object: {e}: {line:?}")
+            })
+        })
+        .collect()
+}
+
+fn assert_spawn_exit_counts_equal(events: &[AuditEvent]) {
+    let spawns = events
+        .iter()
+        .filter(|e| matches!(e, AuditEvent::ProcessSpawn { .. }))
+        .count();
+    let exits = events
+        .iter()
+        .filter(|e| matches!(e, AuditEvent::ProcessExit { .. }))
+        .count();
+    assert_eq!(
+        spawns, exits,
+        "ProcessSpawn count must equal ProcessExit count for a non-Running experiment: {events:?}"
+    );
+}
 
 fn evaluator_detecting(marker: &str) -> agentforge::domain::EvaluatorSpec {
     let (program, args) = if cfg!(windows) {
@@ -80,6 +116,8 @@ fn a_completed_run_with_a_good_verdict_is_persisted_worktree_removed_lock_cleare
         record.audit_log_path.exists(),
         "the audit log is written under the external state root, independent of the worktree"
     );
+    let audit_events = parse_and_validate_audit_jsonl(&record.audit_log_path);
+    assert_spawn_exit_counts_equal(&audit_events);
     let patch = std::fs::read_to_string(&record.patch_path).expect("patch captured");
     assert!(
         patch.contains("app.txt"),
@@ -202,6 +240,9 @@ fn an_agent_process_exceeding_its_timeout_ends_timedout_not_completed() {
 
     let loaded = store.load_experiment(&record.id).expect("load_experiment");
     assert_eq!(loaded.status, ExperimentStatus::TimedOut);
+
+    let audit_events = parse_and_validate_audit_jsonl(&record.audit_log_path);
+    assert_spawn_exit_counts_equal(&audit_events);
 }
 
 #[test]

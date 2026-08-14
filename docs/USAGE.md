@@ -5,13 +5,27 @@ page is copied from an actual `cargo run --example demo` run or the CLI's own `-
 nothing here is aspirational or hand-typed from memory. See [README.md](../README.md) for a
 30-second overview and [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together.
 
+## Before you start
+
+You need a built `agentforge` binary — see [README.md's Install section](../README.md#install)
+if you haven't built one yet (`cargo build --release`, under a minute, no external dependencies).
+Every command below assumes `agentforge` is on your `PATH`; substitute
+`./target/release/agentforge` (or `.\target\release\agentforge.exe` on Windows) if you haven't
+added it to `PATH`.
+
+Sections 1–4 below walk through real setup against your own git repository, end to end. If you'd
+rather see the whole tool work *before* writing any config of your own, run `cargo run --example
+demo` first (no setup, no API key) — it drives every command on this page against a small seeded
+fixture repo; see [Running the whole thing locally](#running-the-whole-thing-locally-no-paid-api)
+at the bottom of this page.
+
 ## Conventions used below
 
 - Every command that reads repo-tracked or state-root state takes `--repo <path>` (default `.`).
 - Every command that can produce a structured result takes `--json`.
 - `<agent>` is always `adapter[:model]` — today, the only resolvable adapter name is
   `claude-code`, e.g. `--agent claude-code` or `--agent claude-code:opus`. See
-  [README.md](../README.md#local-no-paid-api-demo) for how to exercise the whole CLI without a
+  [README.md](../README.md#local-demo--zero-paid-api) for how to exercise the whole CLI without a
   paid API key at all.
 - Global exit codes, used consistently, no per-command exceptions: `0` success, `1` generic/
   internal error, `2` usage/validation error, `3` a judged patch/commit was bad, `124` an agent
@@ -363,7 +377,7 @@ compiled `agentforge` binary through every command on this page against a small 
 service" repository with a seeded bug. Nothing is mocked at the AgentForge level — it's the same
 binary, the same `ClaudeCodeAdapter`, redirected at a fake executable via the adapter's own
 `AGENTFORGE_CLAUDE_EXECUTABLE` override (the same knob a CI pipeline would use). See
-[README.md](../README.md#local-no-paid-api-demo) to run it yourself.
+[README.md](../README.md#local-demo--zero-paid-api) to run it yourself.
 
 ```
 cargo run --example demo        # narrated, ~10s

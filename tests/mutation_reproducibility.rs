@@ -54,6 +54,35 @@ fn find_candidates_is_deterministic_for_a_fixed_seed_and_base() {
     }
 }
 
+/// SPEC.md §17/§18 (row 10, R4 resolution): candidate ordering must not depend on the host
+/// filesystem's case-(in)sensitivity. `matching_tracked_files` (src/mutation/mod.rs) never
+/// touches the filesystem for listing at all — file names come from `git ls-tree` against a
+/// commit's tree object, then `Vec<String>::sort()` (byte-wise `Ord`, not case-folded) — so this
+/// can't literally be exercised under two different simulated filesystem case-sensitivity modes
+/// (this dev machine's actual filesystem is a fixed, single mode either way). What's concretely
+/// testable, and what actually backs the "identical under case-sensitive vs. case-insensitive"
+/// guarantee: the sort itself is byte-wise, not a case-insensitive comparator, proven by two
+/// tracked files whose relative order would *differ* between the two — `B.txt` sorts before
+/// `a.txt` byte-wise (ASCII `B` = 0x42 < `a` = 0x61) but after it under any case-folding compare.
+#[test]
+fn candidate_order_is_byte_wise_not_case_folded() {
+    let repo = common::init_temp_repo();
+    common::commit_file(repo.path(), "a.txt", "let ok = true;\n", "add a");
+    common::commit_file(repo.path(), "B.txt", "let ok = true;\n", "add B");
+    let head = common::head_sha(repo.path());
+    let eng = engine(repo.path());
+
+    let candidates = eng
+        .find_candidates(&head, &boolean_flip_spec(1))
+        .expect("find_candidates");
+    let files: Vec<&str> = candidates.iter().map(|c| c.file.as_str()).collect();
+    assert_eq!(
+        files,
+        vec!["B.txt", "a.txt"],
+        "candidate order must be byte-wise sorted (uppercase before lowercase), never case-folded: {files:?}"
+    );
+}
+
 #[test]
 fn apply_produces_an_identical_mutant_commit_across_repeated_runs() {
     // The core reproducibility guarantee: same (operator, target_glob, seed, operator_version,
