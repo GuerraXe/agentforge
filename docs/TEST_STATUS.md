@@ -4,6 +4,45 @@ Point-in-time record, most recent pass first. Re-run `cargo test` yourself for c
 don't trust these once implementation has moved on. `cargo fmt`, `cargo clippy --all-targets
 --all-features -- -D warnings`, and `cargo test` all currently pass with zero failures/warnings.
 
+## Latest result (2026-08-13, "CI and repository hygiene" pass)
+
+**284 passed, 0 failed, 284 total** (unchanged — no product code touched this pass). `cargo fmt
+--check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-features`,
+and `cargo build --all-features` all re-verified clean, locally, before committing.
+
+Gave AgentForge its own git repo (item 11 in `CONTEXT.md`'s MVP priorities, the last open gap):
+`git init -b main`, one initial commit with all pre-existing source/docs plus the new hygiene
+files below. No GitHub remote created and nothing pushed this pass (scoped to local setup only,
+per explicit user choice).
+
+- **`.github/workflows/ci.yml`** — one `test` job, matrix over `ubuntu-latest`/`windows-latest`
+  (not a single OS: the timeout process-tree-kill path from the adversarial-review pass has a real
+  `cfg(unix)`/`cfg(windows)` implementation on each side — a one-OS matrix would leave one of them
+  never compiled by CI), running `cargo fmt --all -- --check`, `cargo clippy --all-targets
+  --all-features -- -D warnings`, `cargo test --all-features`, `cargo build --all-features` via
+  `dtolnay/rust-toolchain` + `Swatinem/rust-cache`. Deliberately one straightforward job, no
+  release/publish/coverage/multi-toolchain jobs — not asked for, would be premature for a
+  `publish = false` binary crate with no crates.io distribution.
+- **`.gitignore`** — `/target/`, editor/OS cruft, and `.agentforge/` (the runtime state directory
+  `agentforge init` creates — every test/example already uses a `tempfile`-backed root instead, so
+  a real one only ever appears from manual local use, never from the test suite).
+- **`.gitattributes`** — `* text=auto eol=lf`, since CI now builds on both Windows and Linux and
+  this dev machine's global git config smudges LF→CRLF on checkout (already noted as a real
+  characteristic in the "repository fault injection" pass below) — normalizes so clones on either
+  platform see the same bytes.
+- **`Cargo.toml`** — added `repository`, `readme`, `keywords`, `categories` (all previously
+  missing); `repository` points at `https://github.com/GuerraXe/agentforge`, the URL the user chose
+  when asked (lowercase, matching `code-risk-intelligence-engine`'s own naming convention rather
+  than the local `AgentForge` folder's PascalCase).
+
+**How to apply going forward:** the CI workflow's four checks (`fmt --check`, `clippy -D
+warnings`, `test --all-features`, `build --all-features`) are now the bar every future pass must
+clear before considering itself done — this matches what every prior pass already verified by
+hand, just now enforced on every push/PR once a GitHub remote exists. If a future pass adds a
+platform-specific code path (mirroring the existing `cfg(unix)`/`cfg(windows)` split), keep both
+OSes in the CI matrix rather than trimming to one for speed. Creating the actual GitHub remote and
+pushing is still open — deliberately left to the user, not done automatically by this pass.
+
 ## Latest result (2026-08-13, "agent-generated complexity simplification pass")
 
 **284 passed, 0 failed, 284 total** (unchanged from the prior pass) — a pure simplification pass,

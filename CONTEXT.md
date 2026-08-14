@@ -264,8 +264,14 @@ ad hoc.
     `tests/cli_race.rs`, `tests/cli_log.rs` (45 tests total), plus updates to the four pre-existing
     CLI test files for the new command shape. `cargo test`: **275/275** (up from 230/230). See
     `docs/TEST_STATUS.md`'s matching pass entry for full detail.
-11. Own git repo + minimal README, mirroring crie's structural bar — the CLI is now feature-complete
-    end to end; this is the next real gap.
+11. ~~Own git repo + minimal README, mirroring crie's structural bar~~ — done in two passes:
+    README/LICENSE/CONTRIBUTING/docs (2026-08-13 portfolio documentation pass) then the repo
+    itself (2026-08-13, "CI and repository hygiene" pass): `git init -b main` + initial commit,
+    `.github/workflows/ci.yml` (fmt/clippy/test/build, matrix over ubuntu-latest/windows-latest
+    since the timeout process-tree-kill path is genuinely platform-specific), `.gitignore`,
+    `.gitattributes` (`eol=lf`, since CI now spans Windows and Linux), and `Cargo.toml` metadata
+    (`repository`/`readme`/`keywords`/`categories`). No GitHub remote created/pushed yet —
+    deliberately left to the user. See `docs/TEST_STATUS.md`'s matching pass entry.
 12. ~~Build a fully local end-to-end demo, no paid API~~ — done (2026-08-13, "fully local
     end-to-end demo" pass): `src/bin/mock_claude.rs` (a deterministic stand-in agent, substituted
     via `ClaudeCodeAdapter`'s own pre-existing `AGENTFORGE_CLAUDE_EXECUTABLE` override — no change
