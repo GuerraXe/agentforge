@@ -15,16 +15,12 @@ directly against your working checkout answers none of that safely: you can't ea
 did, you have no independent record of what actually ran, and "it says the tests pass" is the
 agent's own unverified claim. AgentForge exists to close that gap.
 
-```mermaid
-flowchart LR
-    A[Task] --> B[Isolated worktree]
-    B --> C[Coding agent]
-    C --> D[Captured patch]
-    D --> E[Independent evaluator]
-    E --> F[Score and report]
 ```
-
-*Task → Isolated worktree → Coding agent → Captured patch → Independent evaluator → Score and report*
+  Task  --->  Isolated worktree  --->  Coding agent  --->  Captured patch
+                                                                  |
+                                                                  v
+                                     Score and report  <---  Independent evaluator
+```
 
 ## Install
 

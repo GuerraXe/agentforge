@@ -220,8 +220,14 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
     let dir = tempfile::tempdir().expect("temp dir");
     let marker = dir.path().join("grandchild_pid.txt");
     let executor = SystemExecutor::new();
+    // Unlike this file's other `timeout_secs: 2` tests, the direct child here must itself spawn
+    // and wait on a *nested* PowerShell process before it can write the marker file — on a
+    // loaded/cold CI runner, PowerShell startup latency alone (let alone a second, nested
+    // startup) can exceed 2s, which previously killed the direct child before it ever wrote the
+    // marker (observed in CI: "the direct child must have written the grandchild's pid before
+    // being killed"). A generous 15s budget keeps the same assertion while giving real headroom.
     let budget = ExecutionBudget {
-        timeout_secs: 2,
+        timeout_secs: 15,
         max_output_bytes: 1_000_000,
     };
 
@@ -261,7 +267,7 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
     );
 
     let mut grandchild_pid = None;
-    for _ in 0..20 {
+    for _ in 0..150 {
         if let Ok(raw) = std::fs::read_to_string(&marker) {
             if let Ok(pid) = raw.trim().parse::<u32>() {
                 grandchild_pid = Some(pid);

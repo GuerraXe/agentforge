@@ -318,7 +318,10 @@ impl Executor for SystemExecutor {
         // Dropped only once the child (and, on the timeout path, everything `tree::kill` could
         // reach) is done — on Windows this closes the Job Object handle, which itself kills any
         // still-living member of the job (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) as a final
-        // safety net even on a normal, non-timeout exit that left a grandchild behind.
+        // safety net even on a normal, non-timeout exit that left a grandchild behind. `Handle`
+        // has no `Drop` impl on Unix/other (a plain marker there, see `tree` above), so this is a
+        // documented no-op on those platforms rather than dead code — hence the lint override.
+        #[allow(clippy::drop_non_drop)]
         drop(tree_handle);
 
         let _ = audit.record(&AuditEvent::ProcessExit {
