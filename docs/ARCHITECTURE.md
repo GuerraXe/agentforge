@@ -1,15 +1,19 @@
 # AgentForge — Rust Architecture
 
+**New to AgentForge?** Start with [README.md](../README.md)'s "Try it in 5 minutes" and
+[USAGE.md](USAGE.md) instead — this document is the internal design reference for contributors.
+
 **Status: implemented and tested end to end.** Every module and command described below is real,
-not a sketch — 293/293 tests passing, `cargo clippy --all-targets --all-features -- -D warnings`
-and `cargo fmt --check` both clean, plus a from-scratch adversarial security review
-(`docs/ADVERSARIAL_REVIEW.md`) with its findings fixed. This document is also the project's design
-history: it was written and kept current pass by pass as the implementation landed, so most
-sections carry a dated **"Implemented"**/**"Hardened"** note pinning exactly which pass shipped
-that piece and why any deviation from the original sketch happened. Treat those notes as the
-authoritative record of what's real; treat the surrounding prose as the stable design rationale
-around it. Derived directly from `docs/SPEC.md` (v2), the product contract this document turns
-into Rust-level module boundaries, trait/struct signatures, and dependency structure.
+not a sketch — run `cargo test` for current status (the CI badge on README.md reflects it live),
+`cargo clippy --all-targets --all-features -- -D warnings` and `cargo fmt --check` both clean,
+plus a from-scratch adversarial security review (`docs/ADVERSARIAL_REVIEW.md`) with its findings
+fixed. This document is also the project's design history: it was written and kept current pass by
+pass as the implementation landed, so most sections carry a dated **"Implemented"**/**"Hardened"**
+note pinning exactly which pass shipped that piece and why any deviation from the original sketch
+happened. Treat those notes as the authoritative record of what's real; treat the surrounding
+prose as the stable design rationale around it. Derived directly from `docs/SPEC.md` (v2), the
+product contract this document turns into Rust-level module boundaries, trait/struct signatures,
+and dependency structure.
 
 **If you just want the shape of the system, not the full derivation:** read §1 (the one rule),
 §2 (dependency graph), and §3 (crate layout) below, then stop — that's the whole architecture in
@@ -1225,8 +1229,8 @@ version) and a root-cause debugging pass that fixed a Windows-specific flaky-tes
 subprocess temp-file leak. A fully local, zero-paid-API demo (`cargo run --example demo`,
 `cargo test --test demo_e2e`) now exercises the entire documented CLI surface end to end.
 
-`cargo test`: **284 passed, 0 failed.** `cargo clippy --all-targets --all-features -- -D
-warnings` and `cargo fmt --check`: clean. `docs/TEST_STATUS.md` holds the full dated history of
-every pass that got the project here; re-run `cargo test` rather than trusting any number in this
-document or that one once you're actively changing code — both are point-in-time snapshots, not
-live status.
+This section is a dated snapshot from an earlier pass, not a live status claim — run `cargo test`
+for current status (the CI badge on README.md reflects it live). `cargo clippy --all-targets
+--all-features -- -D warnings` and `cargo fmt --check`: clean. `docs/TEST_STATUS.md` holds the
+full dated history of every pass that got the project here; treat it, like this section, as a
+point-in-time record rather than a live status source.

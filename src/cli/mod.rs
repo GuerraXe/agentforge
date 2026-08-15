@@ -44,7 +44,11 @@ const DEFAULT_MUTATION_AGENT_TIMEOUT_SECS: u64 = 1800;
 #[derive(Debug, Parser)]
 #[command(
     name = "agentforge",
-    about = "Safely run, test, compare, and evaluate coding agents"
+    about = "Safely run, test, compare, and evaluate coding agents",
+    long_about = "Safely run, test, compare, and evaluate coding agents.\n\n\
+                  New here? Try `cargo run --example quickstart` first — one bug, one agent \
+                  attempt, one verdict, no API key needed. For the full command surface, see \
+                  `cargo run --example demo`."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -53,7 +57,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Bootstrap `.agentforge/` and the external state root — SPEC.md §5, §6.
+    /// Set up AgentForge in this git repository.
     Init(InitArgs),
     /// Create, inspect, run commands in, and remove isolated task worktrees directly — a
     /// lower-level primitive than `run`, independent of any task/evaluator/agent config.
@@ -76,17 +80,15 @@ pub enum Command {
         #[command(subcommand)]
         action: ExperimentAction,
     },
-    /// The one `run` primitive — SPEC.md §8.
+    /// Run one coding agent attempt against a task, in a fresh isolated worktree.
     Run(RunArgs),
-    /// N agent/config combinations against the same task and evaluator — SPEC.md §12.
+    /// Run multiple agents/models against the same task in parallel and rank the results.
     Race(RaceArgs),
-    /// In-process binary search using the task's evaluator as the oracle — SPEC.md §13.
+    /// Binary-search a commit range for the exact commit that broke a behavior.
     Bisect(BisectArgs),
-    /// Standalone evaluator run, against an arbitrary ref (optionally with a patch applied) or a
-    /// stored experiment's already-captured patch — SPEC.md §11.
+    /// Run the evaluator against an arbitrary commit, with no task or scoring involved.
     Verify(VerifyArgs),
-    /// Human-or-JSON reporting: `show` a result, `score` recomputes it, `log` prints its audit
-    /// trail — SPEC.md §6, §13, §15.
+    /// Inspect a stored experiment, race, or bisect result.
     Report {
         #[command(subcommand)]
         action: ReportAction,

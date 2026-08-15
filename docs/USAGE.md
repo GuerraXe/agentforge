@@ -14,10 +14,60 @@ Every command below assumes `agentforge` is on your `PATH`; substitute
 added it to `PATH`.
 
 Sections 1–4 below walk through real setup against your own git repository, end to end. If you'd
-rather see the whole tool work *before* writing any config of your own, run `cargo run --example
-demo` first (no setup, no API key) — it drives every command on this page against a small seeded
-fixture repo; see [Running the whole thing locally](#running-the-whole-thing-locally-no-paid-api)
-at the bottom of this page.
+rather see the whole tool work *before* writing any config of your own, start with the quickstart
+below.
+
+## First five minutes
+
+**Prerequisites:** a built `agentforge` binary — see [Before you start](#before-you-start) above.
+
+```
+cargo run --example quickstart
+```
+
+**What to expect** — six short stages, each with a plain-language explanation before the command
+that runs it:
+
+1. The fixture: one tiny repo, one obvious bug.
+2. Registering the task and evaluator.
+3. Running one coding agent attempt.
+4. The patch — before and after.
+5. The verdict and the score.
+6. Where this is recorded, and what's next.
+
+No API key and no network call — the agent step uses a small deterministic stand-in (see
+`src/bin/mock_claude.rs`), substituted through the real `claude-code` adapter's own
+`AGENTFORGE_CLAUDE_EXECUTABLE` override, so it's exercising real AgentForge code end to end.
+
+**Glossary** — every term below is explained at its first use in the quickstart's own output too:
+
+- **Task** — a registered unit of work: a prompt describing what to fix, which repo/commit to
+  start from, and which Evaluator judges the result.
+- **Evaluator** — the deterministic test that decides pass or fail, never the agent's own opinion
+  of its work.
+- **Adapter** — how AgentForge talks to a specific coding-agent CLI. Only Claude Code is
+  implemented today.
+- **Worktree** — a disposable, isolated copy of your repository (a real `git worktree`) where the
+  agent's changes happen; your actual working directory is never touched.
+- **Experiment** — one agent attempt against a task: a fresh worktree, a captured patch, an
+  evaluator verdict, and a score.
+- **Policy** — controls what a spawned process is allowed to do (timeouts, allowed programs,
+  output limits).
+- **Gated result** — the correctness check failed, so the score is capped low regardless of how
+  efficient or small the patch was.
+
+**Next step for a real repository:** sections 1–4 below register a real task and evaluator against
+your own git repository, one step at a time.
+
+**Optional — compare two agents in parallel:**
+
+```
+cargo run --example quickstart -- --compare
+```
+
+This runs the same `race` command section 6 below describes, with two deterministic stand-in
+candidates, at zero cost. Against real agents, every extra candidate is a separate, billed API
+call — see [Compare agents in parallel](../README.md#compare-agents-in-parallel) in the README.
 
 ## Conventions used below
 
@@ -25,7 +75,7 @@ at the bottom of this page.
 - Every command that can produce a structured result takes `--json`.
 - `<agent>` is always `adapter[:model]` — today, the only resolvable adapter name is
   `claude-code`, e.g. `--agent claude-code` or `--agent claude-code:opus`. See
-  [README.md](../README.md#local-demo--zero-paid-api) for how to exercise the whole CLI without a
+  [First five minutes](#first-five-minutes) above for how to exercise the whole CLI without a
   paid API key at all.
 - Global exit codes, used consistently, no per-command exceptions: `0` success, `1` generic/
   internal error, `2` usage/validation error, `3` a judged patch/commit was bad, `124` an agent
@@ -288,6 +338,10 @@ still-running experiment until its lock clears.
 
 Add `--json` to `show`/`score` for the underlying record instead of the formatted report.
 
+---
+
+Sections 10–12 below are advanced, lower-level mechanisms — most first tasks won't need them.
+
 ## 10. Repository-state test fixtures (`experiment fault` / `mutation` / `mutant`)
 
 Three sibling mechanisms for building deterministic, reproducible test fixtures — none of them
@@ -369,15 +423,13 @@ remove`/`workspace clean` lifecycle, shown above.
 
 ---
 
-## Running the whole thing locally, no paid API
+## Full feature showcase (advanced)
 
-Every example above is drawn from `cargo run --example demo` — a narrated script that builds
-`agentforge` plus a tiny deterministic stand-in binary (`mock_claude`), then drives the real
-compiled `agentforge` binary through every command on this page against a small fixture "billing
-service" repository with a seeded bug. Nothing is mocked at the AgentForge level — it's the same
-binary, the same `ClaudeCodeAdapter`, redirected at a fake executable via the adapter's own
-`AGENTFORGE_CLAUDE_EXECUTABLE` override (the same knob a CI pipeline would use). See
-[README.md](../README.md#local-demo--zero-paid-api) to run it yourself.
+Every example above is drawn from `cargo run --example demo` — a narrated script that drives every
+command on this page, end to end, against a small fixture "billing service" repository with a
+seeded bug, with zero paid API (the same `AGENTFORGE_CLAUDE_EXECUTABLE` substitution the
+quickstart above uses). New to AgentForge? Start with [First five minutes](#first-five-minutes)
+instead — this is the comprehensive, advanced walkthrough.
 
 ```
 cargo run --example demo        # narrated, ~10s

@@ -1,9 +1,12 @@
-//! The AgentForge local end-to-end demo, wired in as a real `cargo test` integration test — see
+//! The AgentForge full feature showcase, wired in as a real `cargo test` integration test — see
 //! `tests/support/demo_scenario.rs` for the full, narrated walkthrough (also runnable directly
 //! via `cargo run --example demo`). Zero paid API: the only "agent" involved is
 //! `src/bin/mock_claude.rs`, a deterministic stand-in substituted through the `claude-code`
 //! adapter's own documented `AGENTFORGE_CLAUDE_EXECUTABLE` override — `adapter::resolve` itself
 //! is untouched and still only ever resolves the real `"claude-code"` adapter.
+//!
+//! New to AgentForge? See `tests/quickstart_e2e.rs` / `cargo run --example quickstart` instead —
+//! this is the advanced, comprehensive walkthrough.
 //!
 //! Run with `cargo test --test demo_e2e -- --nocapture` to see the full narration.
 

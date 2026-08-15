@@ -17,6 +17,9 @@
 //! a three-candidate `race` with real scoring/ranking, a standalone `verify`, semantic `bisect`
 //! over a scripted regression, human-readable and `--json` `report` output, and `clean`.
 
+#[path = "narrate.rs"]
+mod narrate;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -100,9 +103,7 @@ pub fn run(agentforge_bin: &Path, mock_claude_bin: &Path, narrate: bool) -> Demo
 
 impl Demo {
     fn section(&self, title: &str) {
-        if self.narrate {
-            println!("\n=== {title} ===");
-        }
+        narrate::print_section(self.narrate, title);
     }
 
     fn af(&self, args: &[&str]) -> Output {

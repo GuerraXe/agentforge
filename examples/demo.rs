@@ -1,11 +1,12 @@
-//! Runnable, narrated walkthrough of the entire AgentForge product against one small fixture
-//! repo — `cargo run --example demo`. Builds `agentforge` and its demo-only `mock_claude`
-//! stand-in agent first, then drives the real, compiled `agentforge` binary through its
-//! documented CLI surface end to end: `init`, isolated workspaces, evaluator/task/policy
-//! registration, standalone fault injection and mutation testing, a single `run`, a
-//! three-candidate `race` with real scoring/ranking, a standalone `verify`, semantic `bisect`,
-//! human-readable and `--json` reporting, and `clean`. Zero paid API — see
-//! `src/bin/mock_claude.rs` for how the one agent-shaped step is satisfied locally.
+//! Full feature showcase — every AgentForge command, narrated, against one small fixture repo —
+//! `cargo run --example demo`.
+//!
+//! New here? Start with `cargo run --example quickstart` instead: one bug, one agent attempt,
+//! one verdict, in under a minute. This example covers everything else: `init`, isolated
+//! workspaces, evaluator/task/policy registration, standalone fault injection and mutation
+//! testing, a single `run`, a three-candidate `race` with real scoring/ranking, a standalone
+//! `verify`, semantic `bisect`, human-readable and `--json` reporting, and `clean`. Zero paid
+//! API — see `src/bin/mock_claude.rs` for how the one agent-shaped step is satisfied locally.
 //!
 //! See `tests/support/demo_scenario.rs` for the shared, asserted implementation — the exact same
 //! walkthrough is also wired in as `cargo test --test demo_e2e`.
@@ -38,7 +39,7 @@ fn main() {
     let outcome = demo_scenario::run(&agentforge_bin, &mock_claude_bin, true);
 
     println!(
-        "\nDemo complete — every AgentForge command above ran for real, locally, with zero paid API."
+        "\nFull demo complete — every AgentForge command above ran for real, locally, with zero paid API."
     );
     println!("  run:    {}", outcome.run_experiment_id);
     println!(
