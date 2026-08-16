@@ -220,12 +220,6 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
     let dir = tempfile::tempdir().expect("temp dir");
     let marker = dir.path().join("grandchild_pid.txt");
     let executor = SystemExecutor::new();
-    // Unlike this file's other `timeout_secs: 2` tests, the direct child here must itself spawn
-    // and wait on a *nested* PowerShell process before it can write the marker file — on a
-    // loaded/cold CI runner, PowerShell startup latency alone (let alone a second, nested
-    // startup) can exceed 2s, which previously killed the direct child before it ever wrote the
-    // marker (observed in CI: "the direct child must have written the grandchild's pid before
-    // being killed"). A generous 15s budget keeps the same assertion while giving real headroom.
     let budget = ExecutionBudget {
         timeout_secs: 15,
         max_output_bytes: 1_000_000,
@@ -233,10 +227,23 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
 
     // The direct child starts a detached grandchild (itself a long sleep), records its pid to a
     // marker file, then sleeps long enough to hit `budget.timeout_secs` itself.
+    //
+    // Spawns the grandchild via raw `System.Diagnostics.Process` with `UseShellExecute = $false`
+    // rather than `Start-Process -WindowStyle Hidden`: the latter needs a window station, which a
+    // non-interactive session (exactly how GitHub-hosted Windows runners execute this process)
+    // doesn't have — `Start-Process` there throws before ever reaching `Set-Content`, so the
+    // marker file never gets written no matter how generous the timeout budget is (confirmed:
+    // this still failed at 15s, ruling out a plain timing issue). `UseShellExecute = $false`
+    // creates the child process directly via CreateProcess, bypassing the window-station
+    // requirement entirely — the documented fix for `Start-Process` failing under a service/CI
+    // session with no desktop.
     let script = format!(
-        "$p = Start-Process -FilePath 'powershell' -ArgumentList \
-         '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' \
-         -WindowStyle Hidden -PassThru; \
+        "$psi = New-Object System.Diagnostics.ProcessStartInfo; \
+         $psi.FileName = 'powershell'; \
+         $psi.Arguments = '-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 120\"'; \
+         $psi.UseShellExecute = $false; \
+         $psi.CreateNoWindow = $true; \
+         $p = [System.Diagnostics.Process]::Start($psi); \
          Set-Content -Path '{}' -Value $p.Id; Start-Sleep -Seconds 120",
         marker.display()
     );
