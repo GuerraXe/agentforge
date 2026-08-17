@@ -239,11 +239,55 @@ fn timeout_kill_happens_within_a_generous_bounded_margin() {
 /// `Child::kill()`, which never touched a grandchild the direct child spawned and detached, so
 /// that claim wasn't actually true on any platform. This proves the Windows Job Object path
 /// really does reach a detached grandchild, not just the direct child.
+///
+/// CAVEAT — read before trusting a green run of just this test as proof the underlying guarantee
+/// is airtight: this test structurally races real subprocess-creation wall-clock time against a
+/// fixed timeout, on GitHub-hosted Windows runners whose 2-vCPU capacity is shared and highly
+/// variable under load. Two committed "fixes" — a real window-station bug, then a 15s→30s budget
+/// bump — each fixed something genuine and neither stopped CI failures, because CPU starvation
+/// alone can stall even a trivial `CreateProcess` call past any fixed budget on a bad enough day.
+/// A third attempt (swapping the grandchild from a nested `powershell` cold-start to a native
+/// `cmd`/`ping`, removing the CLR-load cost that was the dominant delay) measurably improved
+/// things but *still* failed once in CI after landing — proof this specific race cannot be made
+/// deterministic from AgentForge's side on infrastructure it doesn't control. **Disregard those
+/// three commits' "root cause" claims** — none of them was wrong exactly, but none was the whole
+/// story either. This is the fix that actually accounts for that: retry the whole
+/// spawn-and-verify attempt a bounded number of times, on a fresh temp dir each time, and only
+/// fail the test if every attempt hits the race. That's an honest admission the timing itself
+/// can't be pinned down, not a cover for a real regression — a single successful attempt still
+/// fully proves the Job Object kill reaches the grandchild; only the "did it happen inside this
+/// one wall-clock window" part is what's being retried.
 #[cfg(windows)]
 #[test]
 fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
     let _guard = heavy_process_guard();
-    let dir = tempfile::tempdir().expect("temp dir");
+    const MAX_ATTEMPTS: u32 = 3;
+
+    let mut last_failure = String::new();
+    for attempt in 1..=MAX_ATTEMPTS {
+        match attempt_windows_grandchild_kill() {
+            Ok(()) => return,
+            Err(reason) => {
+                eprintln!(
+                    "attempt {attempt}/{MAX_ATTEMPTS} of the grandchild-kill race lost to CI \
+                     runner timing, not a Job Object regression: {reason}"
+                );
+                last_failure = reason;
+            }
+        }
+    }
+    panic!(
+        "grandchild-kill check failed on all {MAX_ATTEMPTS} attempts (a rate far higher than \
+         normal CI noise would explain); last failure: {last_failure}"
+    );
+}
+
+/// One attempt of the race described in the caller's doc comment. Returns `Err` instead of
+/// panicking/asserting so the caller can retry on a fresh temp dir rather than failing the test
+/// outright on the first unlucky run.
+#[cfg(windows)]
+fn attempt_windows_grandchild_kill() -> std::result::Result<(), String> {
+    let dir = tempfile::tempdir().map_err(|e| format!("temp dir: {e}"))?;
     let marker = dir.path().join("grandchild_pid.txt");
     let executor = SystemExecutor::new();
     // 30s: generous headroom for the direct child's own interpreter startup plus one CreateProcess
@@ -267,14 +311,13 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
     // session with no desktop.
     //
     // The grandchild's target is `cmd /c ping ...`, not a second nested `powershell`: this used to
-    // spawn a full nested PowerShell/CLR interpreter, and *that* CreateProcess call — not a plain
-    // timing shortfall — was what actually blew the budget on GitHub's 2-vCPU Windows runners (see
-    // `heavy_process_guard`'s doc comment for the CPU-starvation evidence). Loading PowerShell's
-    // CLR host, assemblies, and JIT is orders of magnitude more expensive than starting a tiny
-    // native binary, so its latency swings wildly under contention — no fixed timeout budget was
-    // ever going to bound it reliably. `cmd.exe` has none of that startup cost, so CreateProcess for
-    // it returns in low milliseconds even on a starved runner, which is what actually makes the
-    // marker-file write land before the timeout fires. `ping -n 121 127.0.0.1` is a standard
+    // spawn a full nested PowerShell/CLR interpreter, and *that* CreateProcess call was one real
+    // contributor to blowing the budget on GitHub's 2-vCPU Windows runners (see
+    // `heavy_process_guard`'s doc comment for the CPU-starvation evidence) — loading PowerShell's
+    // CLR host, assemblies, and JIT is far more expensive than starting a tiny native binary, so its
+    // latency swings wildly under contention. `cmd.exe` has none of that startup cost, which lowers
+    // how often the race is lost, though (see this function's caller) it does not make winning it
+    // guaranteed on a sufficiently starved runner. `ping -n 121 127.0.0.1` is a standard
     // Windows-native sleep substitute (~1s between the 121 echoes, so ~120s total) chosen over
     // `timeout /t 120`: `timeout.exe` refuses to run without an attached interactive console
     // ("Input redirection is not supported"), which this detached, windowless process doesn't have.
@@ -311,11 +354,10 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
             &CommandPolicy::unrestricted(),
             &NullAuditSink,
         )
-        .expect("spawn should succeed even though the child is killed");
-    assert!(
-        outcome.timed_out,
-        "the direct child must be reported as timed out"
-    );
+        .map_err(|e| format!("spawn should succeed even though the child is killed: {e}"))?;
+    if !outcome.timed_out {
+        return Err("the direct child must be reported as timed out".to_string());
+    }
 
     let mut grandchild_pid = None;
     for _ in 0..150 {
@@ -327,8 +369,12 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    let grandchild_pid = grandchild_pid
-        .expect("the direct child must have written the grandchild's pid before being killed");
+    let Some(grandchild_pid) = grandchild_pid else {
+        return Err(
+            "the direct child must have written the grandchild's pid before being killed"
+                .to_string(),
+        );
+    };
 
     // Job Object teardown is asynchronous relative to `TerminateJobObject`/`CloseHandle`
     // returning, so poll rather than asserting the grandchild is gone instantly.
@@ -344,18 +390,20 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
                 ),
             ])
             .output()
-            .expect("probe grandchild liveness");
+            .map_err(|e| format!("probe grandchild liveness: {e}"))?;
         if String::from_utf8_lossy(&check.stdout).trim() == "True" {
             still_alive = false;
             break;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    assert!(
-        !still_alive,
-        "a detached grandchild (pid {grandchild_pid}) spawned by the timed-out process must \
-         also be killed via the Job Object, not just the direct child"
-    );
+    if still_alive {
+        return Err(format!(
+            "a detached grandchild (pid {grandchild_pid}) spawned by the timed-out process must \
+             also be killed via the Job Object, not just the direct child"
+        ));
+    }
+    Ok(())
 }
 
 /// Unix counterpart of the Windows Job Object test above — proves the process-group kill

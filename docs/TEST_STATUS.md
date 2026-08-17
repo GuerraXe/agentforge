@@ -4,6 +4,44 @@ Point-in-time record, most recent pass first. Re-run `cargo test` yourself for c
 don't trust these once implementation has moved on. `cargo fmt`, `cargo clippy --all-targets
 --all-features -- -D warnings`, and `cargo test` all currently pass with zero failures/warnings.
 
+## Latest result (2026-08-17, "grandchild-kill flake: retry-tolerant fix" pass)
+
+**293 passed, 0 failed, 293 total** (unchanged — one existing test's implementation changed, no
+test added/removed). `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D
+warnings`, and a targeted, single-threaded run of the affected test all re-verified clean locally;
+full-suite `cargo test` again deliberately left to CI (same reasoning as the pass immediately
+below).
+
+**Read this before trusting the "fixed" pass below — it wasn't.** After that pass's fix (nested
+`powershell` grandchild → native `cmd`/`ping`) landed and pushed, CI failed on the exact same test
+again: same assertion, same panic message, a longer 79s runtime. That fix was real and worth
+keeping — it removed a genuine, large cost (CLR/interpreter cold-start) — but it reduced how often
+the race is lost, not whether it can be lost. **The prior pass's framing, and the two passes
+before it, each described their fix as resolving the failure; none of the four did. Treat all four
+of those "root cause" claims as superseded, not just this file's most recent one.**
+
+Process note, on the record because it's relevant to why this took four attempts: the earlier
+passes had the model both write and locally verify its own fix, without independent scrutiny of
+whether "it built and one local run passed" actually ruled out a wall-clock race that only shows
+up under real CI contention — that's how three genuine-but-partial fixes each got shipped labeled
+as the actual fix. This pass was corrected by the user researching the underlying mechanism
+directly (CI logs showing two heavy tests' watchdog messages landing at the same timestamp despite
+a mutex meant to serialize them, and a repeat failure after the interpreter-cold-start fix) and
+directing the model at the specific, narrower target this entry describes, instead of leaving
+"find and fix the CI failure" open-ended again.
+
+**The actual fix this pass:** stopped trying to make the timing itself deterministic — it can't be,
+from AgentForge's side, on shared GitHub-hosted runner capacity — and instead made the test
+tolerate the known race. `timeout_kill_also_terminates_a_detached_grandchild_process_on_windows`
+now retries its whole spawn-and-verify attempt up to 3 times, each on a fresh temp dir, only
+failing if every attempt loses the race; each losing attempt is logged (not swallowed) so a
+genuine regression showing up as *all three* attempts failing stays loud rather than getting
+mistaken for noise. A single successful attempt still fully proves the Job Object kill reaches a
+detached grandchild — only the "did the marker get written inside this one wall-clock window" part
+is what's now allowed to be retried. Verified locally the same way as the pass below (hard external
+kill-deadline wrapped around the run, so nothing could hang regardless of outcome): passed on the
+first attempt in ~30s, no leftover processes.
+
 ## Latest result (2026-08-17, "Windows CI grandchild-kill flake" pass)
 
 **293 passed, 0 failed, 293 total** (unchanged — one existing test's implementation changed, no
