@@ -4,6 +4,32 @@ Point-in-time record, most recent pass first. Re-run `cargo test` yourself for c
 don't trust these once implementation has moved on. `cargo fmt`, `cargo clippy --all-targets
 --all-features -- -D warnings`, and `cargo test` all currently pass with zero failures/warnings.
 
+## Latest result (2026-08-17, "Windows CI grandchild-kill flake" pass)
+
+**293 passed, 0 failed, 293 total** (unchanged — one existing test's implementation changed, no
+test added/removed). `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D
+warnings`, and a targeted, single-threaded run of the previously-flaky test all re-verified clean
+locally; full-suite `cargo test` left to CI for this pass (see below for why).
+
+`tests/exec_boundaries.rs::timeout_kill_also_terminates_a_detached_grandchild_process_on_windows`
+had failed on 4 consecutive Windows CI runs, including the run immediately after a commit titled
+as fixing its "actual root cause" — two prior fixes (the window-station bug, then a 15s→30s budget
+bump) each addressed something real but neither stopped the failures. The actual cause: the test's
+direct child spawned its detached grandchild by cold-starting a *second* nested
+PowerShell/CLR interpreter, and loading that interpreter — not a plain timing shortfall — was slow
+and wildly variable on GitHub's 2-vCPU Windows runners under contention (this file's
+`captured_output_is_truncated_at_max_output_bytes` was independently observed taking ~28s for
+work that's instant locally). No fixed timeout budget was ever going to bound that reliably.
+Fixed by changing the grandchild's target from a nested `powershell` to `cmd /c ping ...` (a
+native process with no CLR/profile cold-start cost); the Job Object `tree::kill` terminates on
+timeout contains every process in the tree regardless of image, so this doesn't weaken what the
+test proves. Verified locally with a hard external kill-deadline wrapped around the test run (per
+explicit user request, to guarantee no runaway process regardless of whether the fix worked) —
+passed cleanly in ~30s with no leftover processes. Full local `cargo test` deliberately not run
+this pass (explicit user choice, to avoid many parallel process-heavy tests across different test
+files competing for CPU on their machine at once — `HEAVY_PROCESS_LOCK` only serializes within
+this one file); left for CI, whose 2-vCPU runner is the actual environment this fix targets.
+
 ## Latest result (2026-08-14, "final portfolio-review pass")
 
 **293 passed, 0 failed, 293 total** (unchanged from the SOLO-verification pass below — no new

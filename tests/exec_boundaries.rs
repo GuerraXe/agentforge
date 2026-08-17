@@ -9,11 +9,34 @@
 mod common;
 
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use agentforge::audit::NullAuditSink;
 use agentforge::domain::{AuditEvent, CommandPolicy, ExecutionBudget, ProcessSpec};
 use agentforge::exec::{Error as ExecError, Executor, SystemExecutor};
+
+/// Serializes this file's process-spawning/timeout tests. `cargo test` runs tests within one
+/// binary in parallel by default; on a resource-constrained CI runner (2 vCPUs on GitHub-hosted
+/// Windows), several of these racing for CPU at once starves each other badly enough that even a
+/// trivial subprocess (a one-line `Write-Output`) can take tens of seconds to run — observed in
+/// CI: `captured_output_is_truncated_at_max_output_bytes` took ~28s for work that's instant
+/// locally. That starvation is what repeatedly broke
+/// `timeout_kill_also_terminates_a_detached_grandchild_process_on_windows`: two earlier fixes (a
+/// real window-station bug, then a larger timeout budget) each addressed a genuine issue but
+/// neither stopped CI failures, because the test's own grandchild used to cold-start a *second*
+/// nested PowerShell/CLR interpreter — an operation expensive and variable enough that no fixed
+/// timeout reliably bounded it under contention. That test now spawns a native `cmd`/`ping`
+/// grandchild instead (see its own doc comment), removing that variable cost rather than just
+/// budgeting more time for it. One process-heavy test at a time still keeps every test's own
+/// timeout budget meaningful regardless of how loaded the runner is.
+static HEAVY_PROCESS_LOCK: Mutex<()> = Mutex::new(());
+
+fn heavy_process_guard() -> std::sync::MutexGuard<'static, ()> {
+    HEAVY_PROCESS_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn cwd_echo_command() -> ProcessSpec {
     if cfg!(windows) {
@@ -155,6 +178,7 @@ fn env_passthrough_allowlist_is_exact() {
 
 #[test]
 fn process_exceeding_timeout_is_reported_as_timed_out() {
+    let _guard = heavy_process_guard();
     let dir = tempfile::tempdir().expect("temp dir");
     let executor = SystemExecutor::new();
     let budget = ExecutionBudget {
@@ -184,6 +208,7 @@ fn timeout_kill_happens_within_a_generous_bounded_margin() {
     // SPEC.md §18: a fixed, generous margin (budget 2s, bound 5s) — chosen specifically to
     // avoid flakiness under loaded CI, per SPEC.md §20 (T3). This asserts "killed within a
     // bound," not "killed instantly."
+    let _guard = heavy_process_guard();
     let dir = tempfile::tempdir().expect("temp dir");
     let executor = SystemExecutor::new();
     let budget = ExecutionBudget {
@@ -217,11 +242,15 @@ fn timeout_kill_happens_within_a_generous_bounded_margin() {
 #[cfg(windows)]
 #[test]
 fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
+    let _guard = heavy_process_guard();
     let dir = tempfile::tempdir().expect("temp dir");
     let marker = dir.path().join("grandchild_pid.txt");
     let executor = SystemExecutor::new();
+    // 30s: generous headroom for the direct child's own interpreter startup plus one CreateProcess
+    // call for the grandchild (see below for why that call is now cheap rather than the dominant
+    // cost).
     let budget = ExecutionBudget {
-        timeout_secs: 15,
+        timeout_secs: 30,
         max_output_bytes: 1_000_000,
     };
 
@@ -232,15 +261,30 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
     // rather than `Start-Process -WindowStyle Hidden`: the latter needs a window station, which a
     // non-interactive session (exactly how GitHub-hosted Windows runners execute this process)
     // doesn't have — `Start-Process` there throws before ever reaching `Set-Content`, so the
-    // marker file never gets written no matter how generous the timeout budget is (confirmed:
-    // this still failed at 15s, ruling out a plain timing issue). `UseShellExecute = $false`
-    // creates the child process directly via CreateProcess, bypassing the window-station
+    // marker file never gets written no matter how generous the timeout budget is. `UseShellExecute
+    // = $false` creates the child process directly via CreateProcess, bypassing the window-station
     // requirement entirely — the documented fix for `Start-Process` failing under a service/CI
     // session with no desktop.
+    //
+    // The grandchild's target is `cmd /c ping ...`, not a second nested `powershell`: this used to
+    // spawn a full nested PowerShell/CLR interpreter, and *that* CreateProcess call — not a plain
+    // timing shortfall — was what actually blew the budget on GitHub's 2-vCPU Windows runners (see
+    // `heavy_process_guard`'s doc comment for the CPU-starvation evidence). Loading PowerShell's
+    // CLR host, assemblies, and JIT is orders of magnitude more expensive than starting a tiny
+    // native binary, so its latency swings wildly under contention — no fixed timeout budget was
+    // ever going to bound it reliably. `cmd.exe` has none of that startup cost, so CreateProcess for
+    // it returns in low milliseconds even on a starved runner, which is what actually makes the
+    // marker-file write land before the timeout fires. `ping -n 121 127.0.0.1` is a standard
+    // Windows-native sleep substitute (~1s between the 121 echoes, so ~120s total) chosen over
+    // `timeout /t 120`: `timeout.exe` refuses to run without an attached interactive console
+    // ("Input redirection is not supported"), which this detached, windowless process doesn't have.
+    // The Job Object that `tree::kill` terminates on timeout (src/exec/mod.rs) contains every
+    // process in the tree regardless of what image it is, so swapping the grandchild's binary
+    // doesn't weaken what this test proves.
     let script = format!(
         "$psi = New-Object System.Diagnostics.ProcessStartInfo; \
-         $psi.FileName = 'powershell'; \
-         $psi.Arguments = '-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 120\"'; \
+         $psi.FileName = 'cmd'; \
+         $psi.Arguments = '/c ping -n 121 127.0.0.1 >NUL'; \
          $psi.UseShellExecute = $false; \
          $psi.CreateNoWindow = $true; \
          $p = [System.Diagnostics.Process]::Start($psi); \
@@ -319,6 +363,7 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_windows() {
 #[cfg(unix)]
 #[test]
 fn timeout_kill_also_terminates_a_detached_grandchild_process_on_unix() {
+    let _guard = heavy_process_guard();
     let dir = tempfile::tempdir().expect("temp dir");
     let marker = dir.path().join("grandchild_pid.txt");
     let executor = SystemExecutor::new();
@@ -385,6 +430,7 @@ fn timeout_kill_also_terminates_a_detached_grandchild_process_on_unix() {
 
 #[test]
 fn captured_output_is_truncated_at_max_output_bytes() {
+    let _guard = heavy_process_guard();
     let dir = tempfile::tempdir().expect("temp dir");
     let executor = SystemExecutor::new();
     let budget = ExecutionBudget {
